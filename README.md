@@ -206,20 +206,23 @@ flowchart LR
 
 ```bash
 # 1. 克隆
-git clone https://github.com/linguo2625469/workbuddy2api-panel.git
-cd workbuddy2api-panel
+git clone https://github.com/PlanetSider/workbuddy2api-panel-docker.git
+cd workbuddy2api-panel-docker
 
 # 2. 准备配置（compose 挂载此文件，缺失会导致容器启动失败）
 cp config.example.json config.json
 #    建议编辑 config.json 设置 api_key（或留空由程序自动生成随机密钥）
 
-# 3. 启动（首次会构建镜像，约 1-2 分钟）
-docker compose up -d --build
+# 3. 拉取 GitHub Actions 发布到 GHCR 的镜像并启动
+docker compose pull
+docker compose up -d
 
 # 4. 健康检查（无可用账号时返回 503）
 curl -s http://localhost:7863/healthz
 # {"healthy":0,"total":0,"service":"workbuddy2api"}
 ```
+
+默认镜像为 `ghcr.io/planetsider/workbuddy2api-panel-docker:latest`。如果仓库的 GHCR 包是私有的，先执行 `docker login ghcr.io`；也可以通过 `WB2API_IMAGE` 指定固定版本或私有镜像，例如 `WB2API_IMAGE=ghcr.io/planetsider/workbuddy2api-panel-docker:sha-<commit> docker compose up -d`。
 
 启动后打开 **`http://localhost:7863/panel/`**，用面板「添加账号」完成登录（见下节）。
 
@@ -612,12 +615,16 @@ http://127.0.0.1:7863/panel/
 
 ### Docker 镜像
 
-多阶段镜像（`golang:1.23-alpine` 构建 → `alpine:3.20` 运行）一次编译全部四个二进制并随镜像分发：
+多阶段镜像（`golang:1.23-alpine` 构建 → `alpine:3.20` 运行）由 GitHub Actions 自动构建并发布到 GHCR，默认同时提供 `linux/amd64` 与 `linux/arm64`：
 
+- 工作流文件：`.github/workflows/docker-image.yml`
+- 推送到默认分支会更新 `latest`，所有推送还会生成分支 / tag / commit SHA 标签；Pull Request 只构建验证，不发布镜像
 - **wb2api**（主服务）、**signin_bin**、**login**、**credit** + 脚本（`login.sh` / `signin.sh` / `credit.sh` / `scripts/probe_active.py`）
 - 以 `app` 用户（uid 10001）运行，`app/auths` 与 `app/data` 预建
 - 镜像内默认落 `config.example.json` 作为空配置（不含密钥），生产用挂载卷覆盖 `/app/config.json`
 - 内置 `HEALTHCHECK`（`wget /healthz`，30s 间隔）
+
+Compose 默认拉取 `ghcr.io/planetsider/workbuddy2api-panel-docker:latest`；可用 `WB2API_IMAGE` 覆盖镜像引用，用 `WB2API_PULL_POLICY=missing` 在离线环境复用本地缓存。
 
 账号 / 数据通过 `docker-compose.yml` 卷挂载持久化：`./auths`、`./data`、`./config.json`。
 
@@ -683,9 +690,9 @@ python3 scripts/probe_max_tokens.py   --base http://127.0.0.1:7863/v1 --key sk-x
 
 ### 3. 发布来源与合规边界
 
-- **无预编译 release**：仓库无 Release / tag，产物 = 源码自构建（Dockerfile 多阶段在本地构建时完成）
+- Docker 镜像由 `.github/workflows/docker-image.yml` 从仓库源码构建并发布到 GHCR；部署时可使用 `latest`，也可使用 `sha-<commit>` 标签固定源码版本
+- 镜像构建只使用仓库 `Dockerfile` 声明的基础镜像与 Go 依赖；生产环境建议固定 SHA 标签并通过 GHCR 权限控制镜像访问
 - 登录 / 签到 / 积分工具：`./login.sh` / `./signin.sh` / `./credit.sh`
-- **无产物校验和**：`go.sum` 仅约束 Go 模块依赖；Docker 镜像由本地 `docker compose build` 生成，未引用第三方镜像
 - 上游 CodeBuddy 属腾讯系商业产品，本项目是其**非官方 OpenAI 兼容网关**；使用其账号做 API 网关涉及目标平台服务条款与账号风险，作者不对账号封禁、条款违约或使用结果负责
 
 ### 4. 授权使用边界
