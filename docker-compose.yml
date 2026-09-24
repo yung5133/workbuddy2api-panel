@@ -1,6 +1,11 @@
 services:
   wb2api:
-    build: .
+    # GitHub Actions publishes the default image to GHCR. Override WB2API_IMAGE
+    # when using a pinned tag, a private mirror, or a locally built image.
+    image: "${WB2API_IMAGE:-ghcr.io/planetsider/workbuddy2api-panel-docker:latest}"
+    # Pull the current published image on every `docker compose up` by default.
+    # For a local-only image, also set WB2API_PULL_POLICY=missing.
+    pull_policy: ${WB2API_PULL_POLICY:-always}
     container_name: workbuddy2api
     restart: unless-stopped
     # 容器默认以 app 用户（uid 10001）运行。宿主机挂载目录属主不同会导致
